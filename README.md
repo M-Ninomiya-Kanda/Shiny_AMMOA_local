@@ -22,6 +22,7 @@ If you do not have the following software installed, please install them. Be sur
 ### Install Required Packages
 The packages below needs to be installed to run Shiny AMMOA app.
 
+**CRAN Packages**
 - shiny shiny (≥ 1.13.0)
 - bslib (≥ 0.10.0)
 - bsplus (≥ 0.1.5)
@@ -33,7 +34,8 @@ The packages below needs to be installed to run Shiny AMMOA app.
 - XML (≥ 3.99-0.23)
 - ggiraph (≥ 0.9.6)
 - tidyverse (≥ 2.0.0)
-<br>
+  
+**BIoconductor Packages**
 - DESeq2 (≥ 1.46.0)
 - clusterProfiler (≥ 4.14.0)
 - MicrobiomeProfiler (≥ 1.12.0)
