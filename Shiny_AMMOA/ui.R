@@ -1,13 +1,13 @@
 # UI -----
 
 ui <- page_navbar(
-  title = "Shiny AMMOA (Local Ver 1.0)",
+  title = "Shiny AMMOA (Local Ver 2.0)",
   # Choose appearance theme
   theme = bs_theme(bootswatch = "minty"),
   
-  # ---- Navigation A: Protein/RNA Enrichment ----
-  nav_panel("RNA/Protein Enrichment",
-            id = "panel_ea",
+  # ---- Navigation A: RNA Enrichment ----
+  nav_panel("bulk RNA",
+            id = "panel_rna_ea",
             useWaiter(),
             
             # sidebar
@@ -21,7 +21,7 @@ ui <- page_navbar(
                 # Action Button
                 card(
                   helpText("After you choose your input, click 'Submit' button."),
-                  actionButton(inputId = "submit_ea",
+                  actionButton(inputId = "submit_rna_ea",
                                label = strong("Submit")) # strong() -> bold style
                 ),
                 
@@ -29,89 +29,83 @@ ui <- page_navbar(
                 card(
                   card_header(strong("Choose Your Input")),
                   
-                  # Data Source Select
-                  card(
-                    radioButtons(
-                      label = strong("Data Source"),
-                      inputId = "datasource",
-                      choiceNames = list(HTML("bulk RNA-seq<br> (Schaum et al 2020)"),
-                                         HTML("Proteomics<br> (Keele et al 2023)")),
-                      choiceValues = c("rna", "protein"),
-                      selected = "rna",
-                      inline = FALSE
-                    )
-                  ),
-                  
                   # Tissue Select
-                  # Because available tissue panel differs depends on dataset referring,
-                  # interactive update is set in the server below
                   card(
                     selectInput(
                       label = strong("Tissue"),
-                      inputId = "tissue_ea",
-                      choices = NULL,
-                      selected = NULL
+                      inputId = "rna_tissue_ea",
+                      choices = choices_tissue$rna,
+                      selected = choices_tissue$rna[1]
                     )
                   ),
-                  
                   
                   # DESeq2 Design
-                  # the below is initial value (datasource == "rna")
-                  # as only two group comparison (8 month vs 18 month) is available for proteomic data,
-                  # interactive update is set in the server below
                   card(
                     radioButtons(
-                      inputId = "design",
-                      label = strong("Design for DEG/DEP Detection"),
-                      choices = c("linear model using all age groups" = "linear",
-                                  "two age groups comparison" = "two_group"),
-                      selected = "two_group",
-                      inline = TRUE
+                      inputId = "rna_ea_algorithm",
+                      label = strong("Enrichment Analysis Algorithm"),
+                      choices = c("ORA" = "ora",
+                                  "GSEA" = "gsea"),
+                      selected = "ora"
                     ),
                     
-                    # age groups to be compared (only applicable when design == two_group)
-                    conditionalPanel(
-                      condition = "input.design == 'two_group'",
-                      p(strong("Age Group (month)")),
-                      fluidRow(
-                        column(6, selectInput("age1", "Young", choices = NULL)),
-                        column(6, selectInput("age2", "Old", choices = NULL))
-                      )
-                    )
-                  ),
-                  
-                  # Threshold to Define DEGs/DEPs
-                  card(
-                    p(strong("DE Threshold")),
-                    
-                    numericInput(inputId = "p_thres",
-                                 label = "FDR (BH-adjusted p)",
-                                 value = 0.05,
-                                 min = 0,
-                                 max = 1),
-                    numericInput(inputId = "fc_thres",
-                                 label = "Log2 Fold Change",
-                                 value = 0.5,
-                                 min = 0)
-                  ),
-                  
-                  # DEG usage for Enrichment Analysis
-                  card(
-                    radioButtons(
-                      inputId = "deg_usage",
-                      label = strong("DEs Used for Enrichment Analysis"),
-                      choices = c("both", "up-regulated", "down-regulated"),
-                      selected = "both"
+                    helpText(
+                      "GSEA is available for analysis across all ages only."
                     ),
                     
                     # Database
                     radioButtons(
-                      inputId = "database",
+                      inputId = "rna_database",
                       label = strong("Pathway Database"),
                       choices = c("KEGG", "GO(BP)", "GO(MF)", "GO(CC)"),
                       selected = "KEGG"
                     )
-                  )
+                  ),
+                  
+                  # DESeq2 Design
+                  card(
+                    radioButtons(
+                      inputId = "rna_group_design",
+                      label = strong("Age Groups"),
+                      choices = choices_design[["gsea"]],
+                      selected = "linear"
+                    ),
+                    
+                    # age groups to be compared (only applicable when design == two_group)
+                    conditionalPanel(
+                      condition = "input.rna_group_design == 'two_group'",
+                      p(strong("Age Group (month)")),
+                      fluidRow(
+                        column(6, selectInput("age1", "Young", choices = ages_rna[1:8], selected = 3)),
+                        column(6, selectInput("age2", "Old", choices = ages_rna[!(ages_rna %in% c(1, 3))], selected = 18))
+                      )
+                    )
+                  ),
+                  
+                  conditionalPanel(
+                    condition = "input.rna_ea_algorithm == 'ora'",
+                    # Threshold to Define DEGs (only for ORA)
+                    card(
+                      p(strong("DEG Threshold")),
+                      
+                      numericInput(inputId = "rna_p_thres",
+                                   label = "FDR (BH-adjusted p)",
+                                   value = 0.05,
+                                   min = 0,
+                                   max = 1),
+                      numericInput(inputId = "rna_fc_thres",
+                                   label = "Log2 Fold Change",
+                                   value = 0.5,
+                                   min = 0),
+                      radioButtons(
+                        inputId = "rna_de_usage",
+                        label = strong("DEs Used for Enrichment Analysis"),
+                        choices = c("both", "up-regulated", "down-regulated"),
+                        selected = "both"
+                      )
+                    )
+                  ),
+                  
                 )
               ),
               
@@ -123,16 +117,17 @@ ui <- page_navbar(
                   
                   div(
                     style = "display:flex; flex-direction:column; height:90vh;",
+                    uiOutput("rna_vp_tab_title"),
                     # volcano plot
                     div(style = "flex:4; display:flex; gap:20px;",
-                        # left：Volcano plot
+                        # left:Volcano plot
                         div(
                           style = "flex:3;",
-                          girafeOutput("graph_vp", height = "100%", width = "100%")),
-                        # right：Selectize Input
+                          girafeOutput("rna_graph_vp", height = "100%", width = "100%")),
+                        # right:Selectize Input
                         div(style = "flex:1;",
                             selectizeInput(
-                              inputId = "vp_show_labels",
+                              inputId = "rna_vp_show_labels",
                               label = "Labels to Show:",
                               choices = NULL,
                               multiple = TRUE
@@ -140,26 +135,21 @@ ui <- page_navbar(
                             ## show label action button
                             div(
                               style = "margin-top: 10px;",
-                              uiOutput("vp_update_button")
+                              uiOutput("rna_vp_update_button")
                             ),
                             
-                            # show uncharacterized gene checkbox
-                            div(
-                              style = "margin-top: 10px;",
-                              uiOutput("vp_uncharacterized_check")
-                            )
                         )
                     ),
                     # download button for plot and table
                     div(
                       style = "display: flex; justify-content: left; gap: 15px; margin-bottom: 5px;",
-                      downloadButton("download_vp", "Download Plot"),
-                      downloadButton("download_de_table", "Download Table")
+                      downloadButton("rna_download_vp", "Download Plot"),
+                      downloadButton("rna_download_de_table", "Download Table")
                     ),
                     # table showing gene name, fold change, etc.
                     div(style = "flex:5; overflow-y:auto;",
                         p(strong("Results Table")),
-                        reactableOutput("table_vp", height = "100%")),
+                        reactableOutput("rna_table_vp", height = "100%")),
                   )
                 ),
                 
@@ -168,26 +158,212 @@ ui <- page_navbar(
                   title = "Pathway Enrichment",
                   div(
                     style = "display:flex; flex-direction:column; height:120vh;",
+                    uiOutput("rna_ea_tab_title"),
                     # dot plot showing entiched biological terms
-                    div(style = "flex:5;", plotOutput("graph_dp", height = "100%")),
+                    div(style = "flex:5;", plotOutput("rna_graph_dp", height = "100%")),
                     # download button for plot and table
                     div(
                       style = "display: flex; justify-content: left; gap: 15px; margin-bottom: 5px;",
-                      downloadButton("download_dp", "Download Plot"),
-                      downloadButton("download_ea_table", "Download Table")
+                      downloadButton("rna_download_dp", "Download Plot"),
+                      downloadButton("rna_download_ea_table", "Download Table")
                     ),
                     # table showing all enriched terms
                     div(style = "flex:3; overflow-y:auto;",
                         p(strong("All Enriched Biological Terms")),
-                        reactableOutput("table_ea", height = "100%"))
+                        reactableOutput("rna_table_ea", height = "100%"))
+                  )
+                ),
+                
+                # Tab A3: Sample Metadata
+                nav_panel(
+                  title = "Sample Metadata",
+                  p(
+                    strong("Sample Size Analysed"),
+                  ),
+                  div(
+                    tableOutput("rna_metadata_table")
+                  ),
+                  div(
+                    downloadButton("rna_download_meta_table", "Download Table")
                   )
                 )
               )
             )
   ),
   
-  # ---- Navigation A' Metabolome Enrichment ----
-  nav_panel("Metabolite Enrichment",
+  # ---- Navigation A': Proteome Enrichment ----
+  nav_panel("Proteome",
+            id = "panel_prot_ea",
+            useWaiter(),
+            
+            # sidebar
+            layout_sidebar(
+              sidebar = sidebar(
+                
+                # Appearance of Sidebar
+                open = "always", # Sidebar cannot be closed
+                width = 300,
+                
+                # Action Button
+                card(
+                  helpText("After you choose your input, click 'Submit' button."),
+                  actionButton(inputId = "submit_prot_ea",
+                               label = strong("Submit"))
+                ),
+                
+                # Users' Choice -----
+                card(
+                  card_header(strong("Choose Your Input")),
+                  
+                  # Tissue Select
+                  card(
+                    selectInput(
+                      label = strong("Tissue"),
+                      inputId = "prot_tissue_ea",
+                      choices = choices_tissue$protein,
+                      selected = choices_tissue$protein[1]
+                    )
+                  ),
+                  
+                  # DESeq2 Design
+                  card(
+                    radioButtons(
+                      inputId = "prot_ea_algorithm",
+                      label = strong("Enrichment Analysis Algorithm"),
+                      choices = c("ORA" = "ora",
+                                  "GSEA" = "gsea"),
+                      selected = "ora"
+                    ),
+                    
+                    # Database
+                    radioButtons(
+                      inputId = "prot_database",
+                      label = strong("Pathway Database"),
+                      choices = c("KEGG", "GO(BP)", "GO(MF)", "GO(CC)"),
+                      selected = "KEGG"
+                    )
+                  ),
+                  
+                  # DESeq2 Design
+                  # Comparison Design
+                  # Like datasource input, this section doesn't have multiple choices
+                  card(
+                    p(strong("Age Group")),
+                    p("Young: 8 months"),
+                    p("Old: 18 months")
+                  ),
+                  
+                  conditionalPanel(
+                    condition = "input.prot_ea_algorithm == 'ora'",
+                    # Threshold to Define DEGs (only for ORA)
+                    card(
+                      p(strong("DEP Threshold")),
+                      
+                      numericInput(inputId = "prot_p_thres",
+                                   label = "FDR (BH-adjusted p)",
+                                   value = 0.1,
+                                   min = 0,
+                                   max = 1),
+                      numericInput(inputId = "prot_fc_thres",
+                                   label = "Log2 Fold Change",
+                                   value = 0,
+                                   min = 0),
+                      radioButtons(
+                        inputId = "prot_de_usage",
+                        label = strong("DEs Used for Enrichment Analysis"),
+                        choices = c("both", "up-regulated", "down-regulated"),
+                        selected = "both"
+                      )
+                    )
+                  ),
+                  
+                )
+              ),
+              
+              # Main Panel -----
+              navset_card_pill(
+                # Tab A1: Volcano Plot
+                nav_panel(
+                  title = "Volcano Plot",
+                  
+                  div(
+                    style = "display:flex; flex-direction:column; height:90vh;",
+                    uiOutput("prot_vp_tab_title"),
+                    # volcano plot
+                    div(style = "flex:4; display:flex; gap:20px;",
+                        # left:Volcano plot
+                        div(
+                          style = "flex:3;",
+                          girafeOutput("prot_graph_vp", height = "100%", width = "100%")),
+                        # right:Selectize Input
+                        div(style = "flex:1;",
+                            selectizeInput(
+                              inputId = "prot_vp_show_labels",
+                              label = "Labels to Show:",
+                              choices = NULL,
+                              multiple = TRUE
+                            ),
+                            ## show label action button
+                            div(
+                              style = "margin-top: 10px;",
+                              uiOutput("prot_vp_update_button")
+                            ),
+                            
+                        )
+                    ),
+                    # download button for plot and table
+                    div(
+                      style = "display: flex; justify-content: left; gap: 15px; margin-bottom: 5px;",
+                      downloadButton("prot_download_vp", "Download Plot"),
+                      downloadButton("prot_download_de_table", "Download Table")
+                    ),
+                    # table showing gene name, fold change, etc.
+                    div(style = "flex:5; overflow-y:auto;",
+                        p(strong("Results Table")),
+                        reactableOutput("prot_table_vp", height = "100%")),
+                  )
+                ),
+                
+                # Tab A2: Enrichment Analysis
+                nav_panel(
+                  title = "Pathway Enrichment",
+                  div(
+                    style = "display:flex; flex-direction:column; height:120vh;",
+                    uiOutput("prot_ea_tab_title"),
+                    # dot plot showing entiched biological terms
+                    div(style = "flex:5;", plotOutput("prot_graph_dp", height = "100%")),
+                    # download button for plot and table
+                    div(
+                      style = "display: flex; justify-content: left; gap: 15px; margin-bottom: 5px;",
+                      downloadButton("prot_download_dp", "Download Plot"),
+                      downloadButton("prot_download_ea_table", "Download Table")
+                    ),
+                    # table showing all enriched terms
+                    div(style = "flex:3; overflow-y:auto;",
+                        p(strong("All Enriched Biological Terms")),
+                        reactableOutput("prot_table_ea", height = "100%"))
+                  )
+                ),
+                
+                # Tab A3: Sample Metadata
+                nav_panel(
+                  title = "Sample Metadata",
+                  p(
+                    strong("Sample Size Analysed"),
+                  ),
+                  div(
+                    tableOutput("prot_metadata_table")
+                  ),
+                  div(
+                    downloadButton("prot_download_meta_table", "Download Table")
+                  )
+                )
+              )
+            )
+  ),
+  
+  # ---- Navigation A'' Metabolome Enrichment ----
+  nav_panel("Metabolite",
             id = "panel_metab_ea",
             useWaiter(),
             
@@ -210,27 +386,32 @@ ui <- page_navbar(
                 card(
                   card_header(strong("Choose Your Input")),
                   
-                  # Data Source Select
-                  # Actually it doesn't have choice, but to make UI look similar to RNA/Protein Enrichment, use Radio Button
-                  card(
-                    radioButtons(
-                      label = strong("Data Source"),
-                      inputId = "metab_datasource",
-                      choiceNames = list(HTML("Metabolites<br> (Jankowski et al 2025)")),
-                      choiceValues = "metab",
-                      selected = "metab",
-                      inline = FALSE
-                    )
-                  ),
-                  
                   # Tissue Select
                   card(
                     selectInput(
                       label = strong("Tissue"),
-                      inputId = "tissue_metab_ea",
+                      inputId = "met_tissue_ea",
                       choices = c("Brain", "Colon", "Diaphragm", "Eye", "Heart", "Jejunum", "Kidney", "Liver",
                                   "Lung", "Pancreas", "Quadriceps", "Serum", "Skin(Ear)", "Soleus", "Spleen"),
                       selected = "Kidney"
+                    )
+                  ),
+                  
+                  card(
+                    radioButtons(
+                      label = strong("Enrichment Analysis Algorithm"),
+                      inputId = "met_ea_algorithm",
+                      choices = c("ORA" = "ora"),
+                      selected = "ora",
+                      inline = FALSE
+                    ),
+                    
+                    # Database
+                    radioButtons(
+                      inputId = "metab_database",
+                      label = strong("Pathway Database"),
+                      choices = c("KEGG", "SMPDB"),
+                      selected = "KEGG"
                     )
                   ),
                   
@@ -248,33 +429,24 @@ ui <- page_navbar(
                     
                     numericInput(inputId = "metab_p_thres",
                                  label = "FDR (BH-adjusted p)",
-                                 value = 0.05,
+                                 value = 0.1,
                                  min = 0,
                                  max = 1),
                     numericInput(inputId = "metab_fc_thres",
                                  label = "Log2 Fold Change",
                                  value = 0,
-                                 min = 0)
-                  ),
-                  
-                  # DEG usage for Enrichment Analysis
-                  card(
+                                 min = 0),
+                    
                     radioButtons(
                       inputId = "metab_de_usage",
                       label = strong("DEs Used for Enrichment Analysis"),
                       choices = c("both", "up-regulated", "down-regulated"),
                       selected = "both"
                     ),
-                    
-                    # Database
-                    radioButtons(
-                      inputId = "metab_database",
-                      label = strong("Pathway Database"),
-                      choices = c("KEGG", "SMPDB"),
-                      selected = "KEGG"
-                    ),
-                    
-                    # How to set universe (i.e., background metabolites)
+                  ),
+                  
+                  # How to set universe (i.e., background metabolites)
+                  card(
                     radioButtons(
                       inputId = "metab_universe",
                       label = strong("Background Metabolites"),
@@ -300,7 +472,7 @@ ui <- page_navbar(
                   
                   div(
                     style = "display:flex; flex-direction:column; height:90vh;",
-                    p(strong("Volcano Plot")),
+                    uiOutput("met_vp_tab_title"),
                     # volcano plot
                     div(style = "flex:4; display:flex; gap:20px;",
                         # left：Volcano plot
@@ -336,6 +508,7 @@ ui <- page_navbar(
                   title = "Metabolite Pathway Enrichment",
                   div(
                     style = "display:flex; flex-direction:column; height:120vh;",
+                    uiOutput("met_ea_tab_title"),
                     # dot plot showing entiched biological terms
                     div(style = "flex:5;", plotOutput("graph_metab_dp", height = "100%")),
                     # download button for plot and table
@@ -348,6 +521,20 @@ ui <- page_navbar(
                     div(style = "flex:3; overflow-y:auto;",
                         p(strong("All Biological Terms")),
                         reactableOutput("table_metab_ea", height = "100%"))
+                  )
+                ),
+                
+                # Tab A3: Sample Metadata
+                nav_panel(
+                  title = "Sample Metadata",
+                  p(
+                    strong("Sample Size Analysed"),
+                  ),
+                  div(
+                    tableOutput("met_metadata_table")
+                  ),
+                  div(
+                    downloadButton("met_download_meta_table", "Download Table")
                   )
                 )
               )
@@ -406,12 +593,12 @@ ui <- page_navbar(
                     radioButtons(
                       inputId = "design_rect_pv",
                       label = strong("Age Groups Used"),
-                      choices = c("all age groups" = "all_group",
+                      choices = c("across all ages" = "all_group",
                                   "two age groups"  = "two_group"),
                       selected = "two_group",
                       inline = TRUE
                     ),
-                    helpText("When you choose 'all age groups', compound nodes cannot be shown.")
+                    helpText("When you choose 'across all ages', compound nodes cannot be shown.")
                   ),
                   
                   conditionalPanel(
@@ -482,8 +669,18 @@ ui <- page_navbar(
                 div(style = "height: 150px;", imageOutput("pathview_legend", height="100%", width="auto")),
                 # message
                 div(style = "height: 25px;", uiOutput("pathview_message")),
-                div(style = "height: 25px;font-size:12px;",
-                    p("Pathway diagrams are based on KEGG (Kyoto Encyclopedia of Genes and Genomes). © Kanehisa Laboratories. All rights reserved.")),
+                div(
+                  style = "height: 25px;font-size:12px;",
+                  p(
+                    "KEGG licensing notice: KEGG pathway maps are subject to separate KEGG licensing terms. Non-academic use requires a commercial license. See the ",
+                    a(
+                      "KEGG Copyright and Disclaimer",
+                      href = "https://www.kegg.jp/kegg/legal.html",
+                      target = "_blank"
+                    ),
+                    "."
+                  )
+                ),
                 # download button
                 div(
                   style = "display: flex; justify-content: left; gap: 15px; margin-bottom: 5px;",
@@ -497,7 +694,7 @@ ui <- page_navbar(
   ),
   
   # ---- Navigation C (User Guide)----
-  nav_panel("Userguide",
+  nav_panel("User Guide",
             id = "panel_userguide",
             navset_card_pill(
               nav_panel(
@@ -543,14 +740,36 @@ ui <- page_navbar(
                 h3("Version History"),
                 tags$ul(
                   tags$li(
-                    c("2026-04-24 Ver. 1.0 (First-Launched Build)")
+                    c("2026-04-24 Ver. 1.0 (First-Launched Build)"),
+                    c("2026-09-18 Ver. 2.0")
                   )
                 ),
                 
-                h3("Please Site"),
+                h3("Please Cite (Preprint)"),
                 tags$ul(
                   tags$li(
-                    c("Coming Soon")
+                    tags$p(
+                      tags$strong(
+                        "Shiny AMMOA: an interactive platform for integrative multi-omics analysis of murine aging"
+                      ),
+                      style = "margin-bottom: 0.25rem;"
+                    ),
+                    tags$p(
+                      "Mayuka Ninomiya Kanda",
+                      style = "margin-bottom: 0.25rem;"
+                    ),
+                    tags$p(
+                      "bioRxiv (2026)",
+                      tags$br(),
+                      "DOI: ",
+                      tags$a(
+                        href = "https://doi.org/10.64898/2026.05.18.726091",
+                        "10.64898/2026.05.18.726091",
+                        target = "_blank",
+                        rel = "noopener noreferrer"
+                      ),
+                      style = "margin-bottom: 0;"
+                    )
                   )
                 ),
                 

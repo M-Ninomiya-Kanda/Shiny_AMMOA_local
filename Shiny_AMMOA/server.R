@@ -1,6 +1,6 @@
 # Server -----
 server <- function(input, output, session) {
- 
+  
   # Download Button for Userguides -----
   output$download_userguide_analysis <- downloadHandler(
     filename = "userguide_analysis.pdf",
@@ -16,42 +16,23 @@ server <- function(input, output, session) {
     }
   )
   
-  # Dynamic Input Change: Navigation A (RNA/Protein Enrichment Analysis) -----
-  observeEvent(input$datasource, {
-    # update tissue list in response to data source (RNA / Protein)
-    updateSelectInput(
-      session,
-      "tissue_ea",
-      choices = choices_tissue[[input$datasource]],
-      selected = choices_tissue[[input$datasource]][1]
-    )
+  # Dynamic Input Change: Navigation A (RNA Enrichment Analysis) -----
+  observeEvent(input$rna_ea_algorithm, {
     
-    # Update available statistical design (only 8month vs 18 month is available for protein)
+    # GSEA is only pre-computed in linear analysis
     updateRadioButtons(
       session,
-      "design",
-      choices = choices_design[[input$datasource]],
-      selected = "two_group"
+      "rna_group_design",
+      choices = choices_design[[input$rna_ea_algorithm]],
+      selected = "linear"
     )
-    
-    # initialize age choice
-    if (input$datasource == "protein") {
-      updateSelectInput(session, "age1", choices = 8, selected = 8)
-      updateSelectInput(session, "age2", choices = 18, selected = 18)
-    } else if (input$datasource == "rna") {
-      updateSelectInput(session, "age1", choices = ages_rna[1:8], selected = 3)
-      updateSelectInput(session, "age2",
-                        choices = ages_rna[!(ages_rna %in% c(1, 3))],
-                        selected = 18)
-    }
-    
-    # run update even in initial state
-    ignoreInit = FALSE
-  })
+  },
+  # run update even in initial state
+  ignoreInit = FALSE
+  )
   
   # "Old" age has to be older than "Young" age
   observeEvent(input$age1, {
-    req(input$datasource == "rna")
     age1_num <- as.numeric(input$age1)
     age2_valid_choices <- ages_rna[ages_rna > age1_num]
     updateSelectInput(session, "age2",
@@ -59,22 +40,41 @@ server <- function(input, output, session) {
                       selected = max(18, min(age2_valid_choices)))
   })
   
-  # Navigation A and A': Show Volcano Plot label update button When volcano plot is shown -----
-  output$vp_update_button <- renderUI({
-    req(!is.null(ea_data$gg))
-    actionButton(inputId = "submit_label_vp", label = "Update Label")
+  # Initial Volcano & Enrichment Dot Plot Panel Title ----
+  output$rna_vp_tab_title <- renderUI({
+    p("Rendering graphs may take several seconds. Please wait.")
   })
   
-  # bulk RNAseq only: whether or not show uncharacterized genes
-  # if I use the condition 'input$datasource == "rna"', checkbox (dis)appears when sidebar input changes
-  # this I use condition equation using ea_data reactive value because it is only updated after "submit" button is clicked
-  output$vp_uncharacterized_check <- renderUI({
-    req(!is.null(ea_data$gg) && !any(colnames(ea_data$dat_vp) == "ensembl_id"))
-    checkboxInput(inputId = "vp_uncharacterized",
-                  label = "Show Uncharacterized Genes",
-                  value = ea_data$vp_unchar_state)
+  output$rna_ea_tab_title <- renderUI({
+    p("Rendering graphs may take several seconds. Please wait.")
   })
   
+  output$prot_vp_tab_title <- renderUI({
+    p("Rendering graphs may take several seconds. Please wait.")
+  })
+  
+  output$prot_ea_tab_title <- renderUI({
+    p("Rendering graphs may take several seconds. Please wait.")
+  })
+  
+  output$met_vp_tab_title <- renderUI({
+    p("Rendering graphs may take several seconds. Please wait.")
+  })
+  
+  output$met_ea_tab_title <- renderUI({
+    p("Rendering graphs may take several seconds. Please wait.")
+  })
+  
+  # Navigation A: Show Volcano Plot label update button When volcano plot is shown -----
+  output$rna_vp_update_button <- renderUI({
+    req(!is.null(ea_rna_data$gg))
+    actionButton(inputId = "rna_submit_label_vp", label = "Update Label")
+  })
+  
+  output$prot_vp_update_button <- renderUI({
+    req(!is.null(ea_prot_data$gg))
+    actionButton(inputId = "prot_submit_label_vp", label = "Update Label")
+  })
   
   output$vp_metab_update_button <- renderUI({
     req(!is.null(ea_metab_data$gg_metab))
@@ -98,10 +98,9 @@ server <- function(input, output, session) {
                         choices = ages_rna[!(ages_rna %in% c(1, 3))],
                         selected = 18)
     }
-    
-    # run update even in initial state
-    ignoreInit = FALSE
-  })
+  },
+  # run update even in initial state
+  ignoreInit = FALSE)
   
   # "Old" age has to be older than "Young" age
   observeEvent(input$age1_pv, {
@@ -135,22 +134,44 @@ server <- function(input, output, session) {
   
   # Define all the reactive values -----
   # Navigation A: RNA/protein enrichment analysis
-  ea_data <- reactiveValues(
+  ea_rna_data <- reactiveValues(
     dat_vp = NULL,
     gg = NULL,
     dp = NULL,
     dat_ea_show = NULL,
-    # show uncharacterized gene or not
-    vp_unchar_state = FALSE
+    metadata_table = NULL,
+    # parameters used for exported file names
+    design = NULL,
+    tissue = NULL,
+    ea_algorithm = NULL,
+    database = NULL,
+    age1 = NULL,
+    age2 = NULL
   )
   
-  # Navigation A': metabolite enrichment analysis
+  ea_prot_data <- reactiveValues(
+    dat_vp = NULL,
+    gg = NULL,
+    dp = NULL,
+    dat_ea_show = NULL,
+    metadata_table = NULL,
+    # parameters used for exported file names
+    tissue = NULL,
+    ea_algorithm = NULL,
+    database = NULL
+  )
+  
+  # Navigation A'': metabolite enrichment analysis
   # define reactive value
   ea_metab_data <- reactiveValues(
     dat_metab_vp = NULL,
     gg_metab = NULL,
     dp_metab = NULL,
-    dat_metab_ea_show = NULL
+    dat_metab_ea_show = NULL,
+    metadata_table = NULL,
+    # parameters used for exported file names
+    tissue = NULL,
+    database = NULL
   )
   
   # Navigation B: Pathview
@@ -161,82 +182,132 @@ server <- function(input, output, session) {
   img_bin <- reactiveVal(NULL)
   
   # Navigation A (RNA/Protein Enrichment Analysis) -----
-  observeEvent(input$submit_ea, {
-    library(ggiraph)
+  observeEvent(input$submit_rna_ea, {
     
     # show waiter
-    w_ea <- Waiter$new(html = spin_3(), color = transparent(0.5))
-    w_ea$show()
+    w_rna_ea <- Waiter$new(html = spin_3(), color = transparent(0.5))
+    w_rna_ea$show()
     
-    
-    # ORA -----
     dat_vp <- NULL
     # format fold change and p-value data
-    if (input$datasource == "rna"){
-      # for RNA, perforn DESeq2 processing
-      dat_vp <- my_deseq2_est(meta_data = rna_metadata,
-                              target_tissue = input$tissue_ea,
-                              est_design = input$design,
-                              rawcount_dir = "data/RNA_raw",
-                              age_1 = input$age1,
-                              age_2 = input$age2) %>%
-        left_join(., gene_ids, by = c("symbol" = "SYMBOL"))
-    } else if (input$datasource == "protein"){
-      # for promote data, filter prepossessed data into selected tissue
-      dat_vp <- dat_prot %>%
-        filter(tissue == input$tissue_ea) %>%
-        dplyr::select(-tissue)
-    }
+    dat_vp <- my_load_degs(tissue = input$rna_tissue_ea,
+                           group_design = input$rna_group_design,
+                           age_young = input$age1,
+                           age_old = input$age2)
     
-    # define DEGs/DEPs
-    diff_exps <- dat_vp %>%
-      drop_na(ENTREZID) %>%
-      filter(padj < input$p_thres, abs(log2FoldChange) > input$fc_thres)
-    
-    # define background genes
-    bg_exp <- dat_vp %>%
-      drop_na(ENTREZID) %>%
-      pull(ENTREZID)
-    
-    if (input$deg_usage == "both") {
-      diff_exps <- diff_exps %>% pull(ENTREZID)
-    } else if (input$deg_usage == "up-regulated") {
-      diff_exps <- diff_exps %>% filter(log2FoldChange > 0) %>% pull(ENTREZID)
-    } else if (input$deg_usage == "down-regulated") {
-      diff_exps <- diff_exps %>% filter(log2FoldChange < 0) %>% pull(ENTREZID)
-    }
-    
-    # execute ORA
+    # Enrichment Analysis -----
     # prepare null results
     res_ea <- NULL
     dp <- NULL
     dat_ea_show <- NULL
     
-    res_ea_list <- my_cluterprofiler_ora(differential_exps = diff_exps,
-                                         background_exps = bg_exp,
-                                         bioterm_database = input$database)
+    if (input$rna_ea_algorithm == "ora"){
+      # define DEGs/DEPs
+      diff_exps <- dat_vp %>%
+        filter(padj < input$rna_p_thres, abs(log2FoldChange) > input$rna_fc_thres)
+      
+      # define background genes
+      bg_exp <- readRDS("data/Transcriptome/gene_symbol_entrezid_table_2026-09-12_exported.rds") %>%
+        pull(ENTREZID)
+      
+      if (input$rna_de_usage == "both") {
+        diff_exps <- diff_exps %>% pull(ENTREZID)
+      } else if (input$rna_de_usage == "up-regulated") {
+        diff_exps <- diff_exps %>% filter(log2FoldChange > 0) %>% pull(ENTREZID)
+      } else if (input$rna_de_usage == "down-regulated") {
+        diff_exps <- diff_exps %>% filter(log2FoldChange < 0) %>% pull(ENTREZID)
+      }
+      
+      # execute ORA
+      res_ea_list <- my_cluterprofiler_ora(differential_exps = diff_exps,
+                                           background_exps = bg_exp,
+                                           bioterm_database = input$rna_database,
+                                           tissue_plot_title = input$rna_tissue_ea)
+      
+    } else if (input$rna_ea_algorithm == "gsea") {
+      gsea_table <- readRDS(paste0("data/Transcriptome/GSEA_res/GSEA_",
+                                   input$rna_tissue_ea,
+                                   "_",
+                                   sub("^GO\\((.*)\\)$", "GO_\\1", input$rna_database),
+                                   "_2026_09_14_exported.rds"))
+      gsea_dp_grob <- my_gsea_dp(gsea_res = gsea_table,
+                                 bioterm_database = input$rna_database,
+                                 tissue_plot_title = input$rna_tissue_ea)
+    }
     
     # Navigation A Rendering -----
     # change reactive value
-    if (input$datasource == "rna"){
-      ea_data$gg <- my_volcano(input_data = dat_vp %>% dplyr::filter(symbol %in% gene_ids$SYMBOL[gene_ids$characterized]),
-                               p_threshold = input$p_thres,
-                               fc_threshold = input$fc_thres)
-    } else if (input$datasource == "protein"){
-      ea_data$gg <- my_volcano(input_data = dat_vp,
-                               p_threshold = input$p_thres,
-                               fc_threshold = input$fc_thres)
+    ea_rna_data$design <- input$rna_group_design
+    ea_rna_data$tissue <- input$rna_tissue_ea
+    ea_rna_data$ea_algorithm <- input$rna_ea_algorithm
+    ea_rna_data$database <- input$rna_database
+    
+    if (input$rna_group_design == "two_group") {
+      ea_rna_data$age1 <- input$age1
+      ea_rna_data$age2 <- input$age2
     }
-
-    ea_data$dat_vp <- dat_vp
-    ea_data$dp <- res_ea_list$grob_dot_plot
-    ea_data$dat_ea_show <- res_ea_list$df_ea_show
+    
+    ea_rna_data$dat_vp <- dat_vp
+    
+    if (input$rna_ea_algorithm == "ora"){
+      
+      ea_rna_data$gg <- my_volcano(input_data = dat_vp,
+                                   p_threshold = input$rna_p_thres,
+                                   fc_threshold = input$rna_fc_thres)
+      
+      ea_rna_data$dp <- res_ea_list$grob_dot_plot
+      ea_rna_data$dat_ea_show <- res_ea_list$df_ea_show
+      
+    } else if (input$rna_ea_algorithm == "gsea"){
+      
+      ea_rna_data$gg <- my_volcano(input_data = dat_vp,
+                                   p_threshold = 0.05,
+                                   fc_threshold = 0.5)
+      
+      ea_rna_data$dp <- gsea_dp_grob
+      ea_rna_data$dat_ea_show <- gsea_table
+    }
+    
+    # metadata table
+    if (input$rna_group_design == "linear"){
+      ea_rna_data$metadata_table <- metadata_table_rna %>%
+        filter(tissue == input$rna_tissue_ea)
+    } else if (input$rna_group_design == "two_group") {
+      ea_rna_data$metadata_table <- metadata_table_rna %>%
+        filter(tissue == input$rna_tissue_ea & month %in% paste0("month", c(input$age1, input$age2)))
+    }
     
     
     # Output in Navigation A
+    # tab title 
+    output$rna_vp_tab_title <- renderUI({
+      if (is.null(ea_rna_data$tissue)) {
+        return(NULL)
+      }
+      title_text <- if (ea_rna_data$design == "linear") {
+        paste0(ea_rna_data$tissue, " bulk RNA-seq across all ages")
+      } else {
+        paste0(ea_rna_data$tissue, " bulk RNA-seq ", ea_rna_data$age1, "-month vs ", ea_rna_data$age2, "-month")
+      }
+      p(strong(title_text))
+    })
+    
+    # tab title 
+    output$rna_ea_tab_title <- renderUI({
+      if (is.null(ea_rna_data$tissue)) {
+        return(NULL)
+      }
+      title_text <- if (ea_rna_data$design == "linear") {
+        paste0(ea_rna_data$tissue, " bulk RNA-seq Enrichment Analysis across all ages")
+      } else {
+        paste0(ea_rna_data$tissue, " bulk RNA-seq Enrichment Analysis ", ea_rna_data$age1, "-month vs ", ea_rna_data$age2, "-month")
+      }
+      p(strong(title_text))
+    })
+    
     # interactive volcano plot
-    output$graph_vp <- ggiraph::renderGirafe({
-      girafe(ggobj = ea_data$gg,
+    output$rna_graph_vp <- ggiraph::renderGirafe({
+      girafe(ggobj = ea_rna_data$gg,
              width_svg = 6,
              height_svg = 4.5,
              options = list(
@@ -252,39 +323,43 @@ server <- function(input, output, session) {
     # Update Selectize List for shown label in VP
     updateSelectizeInput(
       session,
-      "vp_show_labels",
-      choices = ea_data$gg[["data"]]$label_hover,
+      "rna_vp_show_labels",
+      choices = ea_rna_data$gg[["data"]]$label_hover,
       selected = NULL,
       server = TRUE
     )
     
     # Download Button for VP
-    output$download_vp <- downloadHandler(
-      filename = "volcano_plot.png",
+    output$rna_download_vp <- downloadHandler(
+      filename = function() {
+        if_else(ea_rna_data$design == "linear",
+                paste0("bulkRNA_volcano_plot_", ea_rna_data$tissue, "_across_all_ages.png"),
+                paste0("bulkRNA_volcano_plot_", ea_rna_data$tissue, "_", ea_rna_data$age1, "vs", ea_rna_data$age2, ".png")) 
+      },
       content = function(file) {
-        ggsave(file, plot = ea_data$gg, width = 6, height = 4.5, dpi = 300)
+        ggsave(file, plot = ea_rna_data$gg, width = 6, height = 4.5, dpi = 300)
       }
     )
     
     # Download Button for Result Table
-    output$download_de_table <- downloadHandler(
+    output$rna_download_de_table <- downloadHandler(
       filename = function() {
-        if_else(input$design == "linear",
-                paste0("result_", input$tissue_ea, "_", input$datasource, "_", input$design, ".csv"),
-                paste0("result_", input$tissue_ea, "_", input$datasource, "_", input$age1, "vs", input$age2, ".csv")) 
+        if_else(ea_rna_data$design == "linear",
+                paste0("bulkRNA_DE_result_", ea_rna_data$tissue, "_across_all_ages.csv"),
+                paste0("bulkRNA_DE_result_", ea_rna_data$tissuea, "_", ea_rna_data$age1, "vs", ea_rna_data$age2, ".csv")) 
       },
       content = function(file) {
-        write.csv(ea_data$dat_vp, file, row.names = FALSE)
+        write.csv(ea_rna_data$dat_vp, file, row.names = FALSE)
       }
     )
     
     # Table
-    output$table_vp <- renderReactable({
-      if (is.null(ea_data$dat_vp) || nrow(ea_data$dat_vp) == 0) {
+    output$rna_table_vp <- renderReactable({
+      if (is.null(ea_rna_data$dat_vp) || nrow(ea_rna_data$dat_vp) == 0) {
         reactable(data.frame(Message = "No results to display"))
       } else {
         reactable(
-          ea_data$dat_vp,
+          ea_rna_data$dat_vp,
           searchable = TRUE,
           theme = reactableTheme(style = list(fontSize = "12px")),
           # reduce digit to look window tidy
@@ -299,60 +374,313 @@ server <- function(input, output, session) {
     }) 
     
     # Enrichment Dot Plot
-    output$graph_dp <- renderPlot(
-      {ea_data$dp}
+    output$rna_graph_dp <- renderPlot(
+      {ea_rna_data$dp}
     )
     
     # Download Button for Dot Plot
-    output$download_dp <- downloadHandler(
-      filename = "enrichment_dot_plot.png",
+    output$rna_download_dp <- downloadHandler(
+      filename = function() {
+        if_else(ea_rna_data$design == "linear",
+                paste0("bulkRNA_", ea_rna_data$database, "_", ea_rna_data$ea_algorithm, "_enrichment_plot_", ea_rna_data$tissue, "_across_all_ages.png"),
+                paste0("bulkRNA_", ea_rna_data$database, "_", ea_rna_data$ea_algorithm, "_enrichment_plot_", ea_rna_data$tissue, "_", ea_rna_data$age1, "vs", ea_rna_data$age2, ".png")) 
+      },
       content = function(file) {
-        ggsave(file, plot = ea_data$dp, width = 9, height = 9, dpi = 300)
+        ggsave(file, plot = ea_rna_data$dp, width = 9, height = 9, dpi = 300)
       }
     )
     
     # Download Button for Result Table
-    output$download_ea_table <- downloadHandler(
-      filename = "all_enriched_terms.csv",
+    output$rna_download_ea_table <- downloadHandler(
+      filename = function() {
+        if_else(ea_rna_data$design == "linear",
+                paste0("bulkRNA_", ea_rna_data$database, "_", ea_rna_data$ea_algorithm, "_enrichment_result_", ea_rna_data$tissue, "_across_all_ages.csv"),
+                paste0("bulkRNA_", ea_rna_data$database, "_", ea_rna_data$ea_algorithm, "_enrichment_result_", ea_rna_data$tissue, "_", ea_rna_data$age1, "vs", ea_rna_data$age2, ".csv")) 
+      },
       content = function(file) {
-        write.csv(ea_data$dat_ea_show, file, row.names = FALSE)
+        write.csv(ea_rna_data$dat_ea_show, file, row.names = FALSE)
       }
     )
     
-    output$table_ea <- renderReactable({
-      if (is.null(ea_data$dat_ea_show) || nrow(ea_data$dat_ea_show) == 0) {
+    output$rna_table_ea <- renderReactable({
+      if (is.null(ea_rna_data$dat_ea_show) || nrow(ea_rna_data$dat_ea_show) == 0) {
         reactable(data.frame(Message = "No enrichment results to display"))
       } else {
         reactable(
-          ea_data$dat_ea_show,
+          ea_rna_data$dat_ea_show,
           searchable = TRUE,
           theme = reactableTheme(style = list(fontSize = "10px"))
         )
       }
     })
     
+    # show metadata
+    output$rna_metadata_table <- renderTable(ea_rna_data$metadata_table)
+    
+    # Download Button for Metadata Table
+    output$rna_download_meta_table <- downloadHandler(
+      filename = function() {
+        if_else(ea_rna_data$design == "linear",
+                paste0("bulkRNA_sample_size_", ea_rna_data$tissue, "_across_all_ages.csv"),
+                paste0("bulkRNA_sample_size_", ea_rna_data$tissue, "_", ea_rna_data$age1, "vs", ea_rna_data$age2, ".csv")) 
+      },
+      content = function(file) {
+        write.csv(ea_rna_data$metadata_table, file, row.names = FALSE)
+      }
+    )
+    
+    
     # hide waiter
-    w_ea$hide()
+    w_rna_ea$hide()
   })
   
   # update volcano plot if labels to show is updated -----
-  observeEvent(input$submit_label_vp, ignoreInit = TRUE, {
-    if (input$datasource == "rna" && !ea_data$vp_unchar_state){
-      ea_data$gg <- my_volcano(input_data = ea_data$dat_vp %>% dplyr::filter(symbol %in% gene_ids$SYMBOL[gene_ids$characterized]),
-                               p_threshold = input$p_thres,
-                               fc_threshold = input$fc_thres)
-    } else {
-      ea_data$gg <- my_volcano(input_data = ea_data$dat_vp,
-                               p_threshold = input$p_thres,
-                               fc_threshold = input$fc_thres)
-    }
+  observeEvent(input$rna_submit_label_vp, ignoreInit = TRUE, {
+    ea_rna_data$gg <- my_volcano(input_data = ea_rna_data$dat_vp,
+                                 p_threshold = ifelse(input$rna_ea_algorithm == "gsea", 0.05 ,input$rna_p_thres),
+                                 fc_threshold = ifelse(input$rna_ea_algorithm == "gsea", 0.5 ,input$rna_fc_thres))
     
-    if (!is.null(input$vp_show_labels) && length(input$vp_show_labels) > 0){
-      ea_data$gg <- ea_data$gg +
-        geom_point(data = ea_data$dat_vp %>% filter(symbol %in% input$vp_show_labels),
+    if (!is.null(input$rna_vp_show_labels) && length(input$rna_vp_show_labels) > 0){
+      ea_rna_data$gg <- ea_rna_data$gg +
+        geom_point(data = ea_rna_data$dat_vp %>% filter(SYMBOL %in% input$rna_vp_show_labels),
                    aes(x = log2FoldChange, y = -log10(padj)),
                    size = 2, shape = 21, color = "black", fill = "magenta") +
-        ggrepel::geom_label_repel(data = ea_data$dat_vp %>% filter(symbol %in% input$vp_show_labels),
+        ggrepel::geom_label_repel(data = ea_rna_data$dat_vp %>% filter(SYMBOL %in% input$rna_vp_show_labels),
+                                  aes(label = SYMBOL, x = log2FoldChange, y = -log10(padj)),
+                                  alpha = 0.8,
+                                  color = "magenta",
+                                  size = 4,
+                                  force = 4,
+                                  max.overlaps = 10)
+    }
+  })
+  
+  
+  # Navigation A' (Protein Enrichment Analysis) -----
+  observeEvent(input$submit_prot_ea, {
+    
+    # show waiter
+    w_prot_ea <- Waiter$new(html = spin_3(), color = transparent(0.5))
+    w_prot_ea$show()
+    
+    dat_vp <- NULL
+    # format fold change and p-value data
+    dat_vp <- readRDS(paste0("data/Proteome/Proteome_DE_res/CellRep2023_DE_", input$prot_tissue_ea, "_2026-09-15.rds"))
+    
+    # Enrichment Analysis -----
+    # prepare null results
+    res_ea <- NULL
+    dp <- NULL
+    dat_ea_show <- NULL
+    
+    if (input$prot_ea_algorithm == "ora"){
+      # define DEGs/DEPs
+      diff_exps <- dat_vp %>%
+        filter(padj < input$prot_p_thres, abs(log2FoldChange) > input$prot_fc_thres)
+      
+      # define background genes
+      bg_exp <- dat_vp %>%
+        pull(ENTREZID) %>%
+        unique()
+      
+      if (input$prot_de_usage == "both") {
+        diff_exps <- diff_exps %>% pull(ENTREZID) %>% unique()
+      } else if (input$prot_de_usage == "up-regulated") {
+        diff_exps <- diff_exps %>% filter(log2FoldChange > 0) %>% pull(ENTREZID) %>% unique()
+      } else if (input$prot_de_usage == "down-regulated") {
+        diff_exps <- diff_exps %>% filter(log2FoldChange < 0) %>% pull(ENTREZID) %>% unique()
+      }
+      
+      # execute ORA
+      res_ea_list <- my_cluterprofiler_ora(differential_exps = diff_exps,
+                                           background_exps = bg_exp,
+                                           bioterm_database = input$prot_database,
+                                           tissue_plot_title = input$prot_tissue_ea)
+      
+    } else if (input$prot_ea_algorithm == "gsea") {
+      gsea_table <- readRDS(paste0("data/Proteome/Proteome_GSEA_res/GSEA_proteome_",
+                                   input$prot_tissue_ea,
+                                   "_",
+                                   sub("^GO\\((.*)\\)$", "GO_\\1", input$prot_database),
+                                   "_2026_09_15_exported.rds"))
+      gsea_dp_grob <- my_gsea_dp(gsea_res = gsea_table,
+                                 bioterm_database = input$prot_database,
+                                 tissue_plot_title = input$prot_tissue_ea)
+    }
+    
+    # Navigation A Rendering -----
+    # change reactive value
+    ea_prot_data$tissue <- input$prot_tissue_ea
+    ea_prot_data$ea_algorithm <- input$prot_ea_algorithm
+    ea_prot_data$database <- input$prot_database
+    
+    ea_prot_data$dat_vp <- dat_vp
+    
+    if (input$prot_ea_algorithm == "ora"){
+      
+      ea_prot_data$gg <- my_volcano(input_data = dat_vp,
+                                    p_threshold = input$prot_p_thres,
+                                    fc_threshold = input$prot_fc_thres,
+                                    tooltip_label = "symbol")
+      
+      ea_prot_data$dp <- res_ea_list$grob_dot_plot
+      ea_prot_data$dat_ea_show <- res_ea_list$df_ea_show
+      
+    } else if (input$prot_ea_algorithm == "gsea"){
+      
+      ea_prot_data$gg <- my_volcano(input_data = dat_vp,
+                                    p_threshold = 0.1,
+                                    fc_threshold = 0,
+                                    tooltip_label = "symbol")
+      
+      ea_prot_data$dp <- gsea_dp_grob
+      ea_prot_data$dat_ea_show <- gsea_table
+    }
+    
+    # metadata table
+    ea_prot_data$metadata_table <- metadata_table_prot %>%
+      filter(tissue == input$prot_tissue_ea)
+    
+    # Output in Navigation A
+    # tab title
+    output$prot_vp_tab_title <- renderUI({
+      if (is.null(ea_prot_data$tissue)) {
+        return(NULL)
+      }
+      title_text <- paste0(str_to_title(ea_prot_data$tissue), " Proteome 8-month vs 18-month")
+      p(strong(title_text))
+    })
+    
+    # tab title 
+    output$prot_ea_tab_title <- renderUI({
+      if (is.null(ea_prot_data$tissue)) {
+        return(NULL)
+      }
+      title_text <- paste0(str_to_title(ea_prot_data$tissue), " Proteome Enrichment Analysis 8-month vs 18-month")
+      p(strong(title_text))
+    })
+    
+    # interactive volcano plot
+    output$prot_graph_vp <- ggiraph::renderGirafe({
+      girafe(ggobj = ea_prot_data$gg,
+             width_svg = 6,
+             height_svg = 4.5,
+             options = list(
+               opts_sizing(rescale = FALSE),
+               opts_toolbar(
+                 saveaspng = FALSE,
+                 hidden = c("selection", "zoom", "misc")
+               )
+             )
+      )
+    })
+    
+    # Update Selectize List for shown label in VP
+    updateSelectizeInput(
+      session,
+      "prot_vp_show_labels",
+      choices = unique(ea_prot_data$gg[["data"]]$label_hover),
+      selected = NULL,
+      server = TRUE
+    )
+    
+    # Download Button for VP
+    output$prot_download_vp <- downloadHandler(
+      filename = paste0("Proteome_volcano_plot_", ea_prot_data$tissue, ".png"),
+      content = function(file) {
+        ggsave(file, plot = ea_prot_data$gg, width = 6, height = 4.5, dpi = 300)
+      }
+    )
+    
+    # Download Button for Result Table
+    output$prot_download_de_table <- downloadHandler(
+      filename = paste0("Proteome_DE_result_", ea_prot_data$tissue, ".csv"),
+      content = function(file) {
+        write.csv(ea_prot_data$dat_vp, file, row.names = FALSE)
+      }
+    )
+    
+    # Table
+    output$prot_table_vp <- renderReactable({
+      if (is.null(ea_prot_data$dat_vp) || nrow(ea_prot_data$dat_vp) == 0) {
+        reactable(data.frame(Message = "No results to display"))
+      } else {
+        reactable(
+          ea_prot_data$dat_vp,
+          searchable = TRUE,
+          theme = reactableTheme(style = list(fontSize = "12px")),
+          # reduce digit to look window tidy
+          columns = list(
+            log2FoldChange = colDef(name = "covariate-adjusted log2FC", format = colFormat(digits = 5)),
+            pvalue = colDef(name = "p-val", format = colFormat(digits = 3)),
+            padj = colDef(name = "FDR (BH-adjusted p)", format = colFormat(digits = 3)),
+            ENTREZID = colDef(show = FALSE)
+          )
+        )
+      }
+    }) 
+    
+    # Enrichment Dot Plot
+    output$prot_graph_dp <- renderPlot(
+      {ea_prot_data$dp}
+    )
+    
+    # Download Button for Dot Plot
+    output$prot_download_dp <- downloadHandler(
+      filename = paste0("Proteome_", ea_prot_data$database, "_", ea_prot_data$ea_algorithm, "_enrichment_plot_", ea_prot_data$tissue, ".png"),
+      content = function(file) {
+        ggsave(file, plot = ea_prot_data$dp, width = 9, height = 9, dpi = 300)
+      }
+    )
+    
+    # Download Button for Result Table
+    output$prot_download_ea_table <- downloadHandler(
+      filename = paste0("Proteome_", ea_prot_data$database, "_", ea_prot_data$ea_algorithm, "_enrichment_result_", ea_prot_data$tissue, ".csv"),
+      content = function(file) {
+        write.csv(ea_prot_data$dat_ea_show, file, row.names = FALSE)
+      }
+    )
+    
+    output$prot_table_ea <- renderReactable({
+      if (is.null(ea_prot_data$dat_ea_show) || nrow(ea_prot_data$dat_ea_show) == 0) {
+        reactable(data.frame(Message = "No enrichment results to display"))
+      } else {
+        reactable(
+          ea_prot_data$dat_ea_show,
+          searchable = TRUE,
+          theme = reactableTheme(style = list(fontSize = "10px"))
+        )
+      }
+    })
+    
+    # show metadata
+    output$prot_metadata_table <- renderTable(ea_prot_data$metadata_table)
+    
+    # Download Button for Metadata Table
+    output$prot_download_meta_table <- downloadHandler(
+      filename = paste0("Proteome_sample_size_", ea_prot_data$tissue, ".csv"),
+      content = function(file) {
+        write.csv(ea_prot_data$metadata_table, file, row.names = FALSE)
+      }
+    )
+    
+    # hide waiter
+    w_prot_ea$hide()
+  })
+  
+  # update volcano plot if labels to show is updated -----
+  observeEvent(input$prot_submit_label_vp, ignoreInit = TRUE, {
+    ea_prot_data$gg <- my_volcano(input_data = ea_prot_data$dat_vp,
+                                  p_threshold = ifelse(input$prot_ea_algorithm == "gsea", 0.1 ,input$prot_p_thres),
+                                  fc_threshold = ifelse(input$prot_ea_algorithm == "gsea", 0 ,input$prot_fc_thres),
+                                  tooltip_label = "symbol")
+    
+    if (!is.null(input$prot_vp_show_labels) && length(input$prot_vp_show_labels) > 0){
+      ea_prot_data$gg <- ea_prot_data$gg +
+        geom_point(data = ea_prot_data$dat_vp %>% filter(symbol %in% input$prot_vp_show_labels),
+                   aes(x = log2FoldChange, y = -log10(padj)),
+                   size = 2, shape = 21, color = "black", fill = "magenta") +
+        ggrepel::geom_label_repel(data = ea_prot_data$dat_vp %>% filter(symbol %in% input$prot_vp_show_labels),
                                   aes(label = symbol, x = log2FoldChange, y = -log10(padj)),
                                   alpha = 0.8,
                                   color = "magenta",
@@ -362,43 +690,17 @@ server <- function(input, output, session) {
     }
   })
   
-  # bulkRNA-seq only : switch show/ not show uncharacterized gene names
-  observeEvent(input$vp_uncharacterized, {
-    ea_data$vp_unchar_state <- input$vp_uncharacterized
-    
-    if (input$datasource == "rna" && !ea_data$vp_unchar_state){
-      ea_data$gg <- my_volcano(input_data = ea_data$dat_vp %>% dplyr::filter(symbol %in% gene_ids$SYMBOL[gene_ids$characterized]),
-                               p_threshold = input$p_thres,
-                               fc_threshold = input$fc_thres)
-    } else {
-      ea_data$gg <- my_volcano(input_data = ea_data$dat_vp,
-                               p_threshold = input$p_thres,
-                               fc_threshold = input$fc_thres)
-    }
-    
-    # Update Selectize List for shown label in VP
-    updateSelectizeInput(
-      session,
-      "vp_show_labels",
-      choices = ea_data$gg[["data"]]$label_hover,
-      selected = NULL,
-      server = TRUE
-    )
-  })
   
-  # Navigation A' (Metabolite Enrichment) -----
+  # Navigation A'' (Metabolite Enrichment) -----
   observeEvent(input$submit_metab_ea, {
     
     # show waiter
     w_metab_ea <- Waiter$new(html = spin_3(), color = transparent(0.5))
     w_metab_ea$show()
     
-    # load library for volcano plot
-    library(ggiraph)
-    
     # ORA -----
     dat_metab_vp <- dat_metab %>%
-      filter(tissue == input$tissue_metab_ea) %>%
+      filter(tissue == input$met_tissue_ea) %>%
       dplyr::select(-tissue) %>%
       left_join(dat_compound_id, by = "compound") %>%
       dplyr::select(compound, log2FC_Aged, pval_Aged, padj_Aged, HMDB, KEGG, PubChem, METLIN, kegg_name) %>%
@@ -449,15 +751,20 @@ server <- function(input, output, session) {
                                                      specify_background = TRUE,
                                                      background_metabs = bg_metabs,
                                                      bioterm_database = input$metab_database,
-                                                     cid_table = dat_compound_id)
+                                                     cid_table = dat_compound_id,
+                                                     tissue_plot_title = input$met_tissue_ea)
     } else if (input$metab_universe == "all_known") {
       res_metab_ea_list <- my_microbiomeprofiler_ora(differential_metabs = diff_metabs,
                                                      specify_background = FALSE,
                                                      bioterm_database = input$metab_database,
-                                                     cid_table = dat_compound_id)
+                                                     cid_table = dat_compound_id,
+                                                     tissue_plot_title = input$met_tissue_ea)
     }
     
     # Navigation A' Rendering -----
+    ea_metab_data$tissue <- input$met_tissue_ea
+    ea_metab_data$database <- input$metab_database
+    
     # change reactive value
     ea_metab_data$gg_metab <- my_volcano(input_data = dat_metab_vp,
                                          p_threshold = input$metab_p_thres,
@@ -467,7 +774,30 @@ server <- function(input, output, session) {
     ea_metab_data$dp_metab <- res_metab_ea_list$grob_metab_dot_plot
     ea_metab_data$dat_metab_ea_show <- res_metab_ea_list$df_metab_ea_show
     
+    # metadata table
+    ea_metab_data$metadata_table <- metadata_table_met %>%
+      filter(tissue == input$met_tissue_ea)
+    
+    
     # Output in Navigation A'
+    # tab title
+    output$met_vp_tab_title <- renderUI({
+      if (is.null(ea_metab_data$tissue)) {
+        return(NULL)
+      }
+      title_text <- paste0(ea_metab_data$tissue, " Metabolome 3-6 months vs ≥21 months")
+      p(strong(title_text))
+    })
+    
+    # tab title 
+    output$met_ea_tab_title <- renderUI({
+      if (is.null(ea_metab_data$tissue)) {
+        return(NULL)
+      }
+      title_text <- paste0(ea_metab_data$tissue, " Metabolome Enrichment Analysis 3-6 months vs ≥21 months")
+      p(strong(title_text))
+    })
+    
     # interactive volcano plot
     output$graph_metab_vp <- ggiraph::renderGirafe({
       girafe(ggobj = ea_metab_data$gg_metab,
@@ -494,7 +824,7 @@ server <- function(input, output, session) {
     
     # Download Button for VP
     output$download_metab_vp <- downloadHandler(
-      filename = "volcano_plot.png",
+      filename = paste0("Metabolome_volcano_plot_", ea_metab_data$tissue, ".png"),
       content = function(file) {
         ggsave(file, plot = ea_metab_data$gg_metab, width = 6, height = 4.5, dpi = 300)
       }
@@ -502,9 +832,7 @@ server <- function(input, output, session) {
     
     # Download Button for Result Table
     output$download_metab_de_table <- downloadHandler(
-      filename = function() {
-        paste0("result_", input$tissue_metab_ea, "_", input$metab_datasource, ".csv")
-      },
+      filename = paste0("Metabolome_DE_result_", ea_metab_data$tissue, ".csv"),
       content = function(file) {
         write.csv(ea_metab_data$dat_metab_vp, file, row.names = FALSE)
       }
@@ -536,7 +864,7 @@ server <- function(input, output, session) {
     
     # Download Button for Dot Plot
     output$download_metab_dp <- downloadHandler(
-      filename = "enrichment_dot_plot.png",
+      filename = paste0("Metabolome_", ea_metab_data$database, "_ora_enrichment_plot_", ea_metab_data$tissue, ".png"),
       content = function(file) {
         ggsave(file, plot = ea_metab_data$dp_metab, width = 9, height = 9, dpi = 300)
       }
@@ -544,7 +872,7 @@ server <- function(input, output, session) {
     
     # Download Button for Result Table
     output$download_metab_ea_table <- downloadHandler(
-      filename = "all_enriched_terms.csv",
+      filename = paste0("Metabolome_", ea_metab_data$database, "_ora_enrichment_result_", ea_metab_data$tissue, ".csv"),
       content = function(file) {
         write.csv(ea_metab_data$dat_metab_ea_show, file, row.names = FALSE)
       }
@@ -562,6 +890,16 @@ server <- function(input, output, session) {
       }
     })
     
+    # show metadata
+    output$met_metadata_table <- renderTable(ea_metab_data$metadata_table)
+    
+    # Download Button for Metadata Table
+    output$met_download_meta_table <- downloadHandler(
+      filename = paste0("Metabolome_sample_size_", ea_metab_data$tissue, ".csv"),
+      content = function(file) {
+        write.csv(ea_metab_data$metadata_table, file, row.names = FALSE)
+      }
+    )
     
     # hide waiter
     w_metab_ea$hide()
@@ -604,22 +942,20 @@ server <- function(input, output, session) {
     if (input$source_rect_pv == "not_show") {
       rect_fc_show <- NULL
     } else if (input$source_rect_pv == "protein") {
-      rect_fc_show <- dat_prot %>%
-        filter(tissue == input$tissue_rect_pv) %>%
+      rect_fc_show <- readRDS(paste0("data/Proteome/Proteome_DE_res/CellRep2023_DE_", input$tissue_rect_pv, "_2026-09-15.rds")) %>%
         filter(!is.na(ENTREZID)) %>%
+        # protein data sometimes has duplicated ENRTEZID (bc single Ensembl protein ID sometimes has multiple gene IDs)
+        arrange(desc(abs(log2FoldChange))) %>%
+        distinct(ENTREZID, .keep_all = TRUE) %>%
         pull(log2FoldChange, name = ENTREZID)
     } else if (input$source_rect_pv == "rna" & input$design_rect_pv == "two_group") {
-      rect_fc_show <- my_deseq2_est(meta_data = rna_metadata,
-                                    target_tissue = input$tissue_rect_pv,
-                                    est_design = "two_group",
-                                    rawcount_dir = "data/RNA_raw",
-                                    age_1 = input$age1_pv,
-                                    age_2 = input$age2_pv) %>%
-        left_join(., gene_ids, by = c("symbol" = "SYMBOL")) %>%
-        filter(!is.na(ENTREZID)) %>%
+      rect_fc_show <- my_load_degs(tissue = input$tissue_rect_pv,
+                                   group_design = "two_group",
+                                   age_young = input$age1_pv,
+                                   age_old = input$age2_pv) %>%
         pull(log2FoldChange, name = ENTREZID)
     } else if (input$source_rect_pv == "rna" & input$design_rect_pv == "all_group") {
-      rect_fc_show <- readRDS(paste0("data/RNA_log2FC/bulkTMS_logFC_", input$tissue_rect_pv, "_exported_2025_12_17.rds"))
+      rect_fc_show <- readRDS(paste0("data/Transcriptome/RNA_log2FC/log2FC_mtx_", input$tissue_rect_pv, "_2026_09_12_exported.rds"))
     }
     
     # compound fold changes
@@ -726,5 +1062,5 @@ server <- function(input, output, session) {
     # hide waiter
     w_pv$hide()
   })
-
+  
 }

@@ -13,6 +13,9 @@ library(viridis)
 library(ggiraph)
 library(png)
 
+library(clusterProfiler)
+library(pathview)
+
 library(tidyverse)
 
 # load supporting file (mostly in-house functions)
@@ -20,20 +23,20 @@ source("shiny_multiomic_source.R")
 
 # Load Necessary Data -----
 
-rna_metadata <- readRDS("data/bulkTMS_metadata_exported_2025_12_17.rds")
-gene_ids <- readRDS("data/bulkTMS_ENTREZID_list_standalone_2025_12_28.rds")
-
-# result of proteomic estimation result from each tissue (CellRep 2023)
-dat_prot <- readRDS("data/CellRep2023_tissue_res_2025-11-07.rds")
-
 # result of metabolomic estimation result from each tissue (CellMet 2025)
-dat_metab <- readRDS("data/CellMet2025_metabolites_adjustedLFC_2025-11-25.rds")
+dat_metab <- readRDS("data/Metabolome/CellMet2025_metabolites_adjustedLFC_2026-09-13_exported.rds")
 # compound IDs annotations
-dat_compound_id <- read.csv("data/compound_mapping_res_2025-11-25.csv")
+dat_compound_id <- read.csv("data/Metabolome/compound_mapping_res_2025-11-25.csv")
 
 # load KEGG pathway IDs
-kegg_ids <- readRDS("data/KEGG_pathway_ID_list_2025_12_17_exported.rds")
+kegg_ids <- readRDS("data/KEGG_pathway_ID_list_2026_09_15_exported.rds")
+dat_pathway2compound <- readRDS("data/Metabolome/kegg_pathway2compound_list.RDS")
+dat_pathway2name <- readRDS("data/Metabolome/kegg_pathway2name_list.RDS")
 
+# Sample metadata
+metadata_table_rna <- readRDS("data/Transcriptome/bulkTMS_sample_size_table_2026_09_15.rds")
+metadata_table_prot <- readRDS("data/Proteome/Proteome_sample_size_table_2026_09_15.rds")
+metadata_table_met <- readRDS("data/Metabolome/Metabolome_sample_size_table_2026_09_15.rds")
 
 # Define Objects Required for Dynamic UI Change -----
 # change tissue list in response to datasource (RNA/Protein)
@@ -44,11 +47,11 @@ choices_tissue <- list(
   not_show = NULL
 )
 
-# change analytical design based on the data source (RNA/Protein)
+# change analytical design based on the EA algorithm
 choices_design <- list(
-  rna = c("linear model using all age groups" = "linear",
+  ora = c("across all ages" = "linear",
           "two age groups comparison" = "two_group"),
-  protein = c("two age groups comparison" = "two_group")
+  gsea = c("across all ages" = "linear")
 )
 
 # Age group can be chosen in bulkRNA dataset

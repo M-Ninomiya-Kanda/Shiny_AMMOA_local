@@ -63,61 +63,37 @@ my_has_cpd_circ <- function(pathway_id, species = "mmu") {
   return(FALSE)
 }
 
-# DESeq2 preprocess ----
-my_deseq2_est <- function(meta_data, est_design, target_tissue, rawcount_dir = "data/RNA_raw", age_1 = NULL, age_2 = NULL){
-  requireNamespace("DESeq2")
+# Load DESeq2 Results ----
+my_load_degs <- function(tissue,
+                         group_design,
+                         age_young = NULL,
+                         age_old = NULL) {
   
-  # linear analysis
-  if (est_design == "linear"){
-    # extract necessary metadata
-    temp1 <- meta_data %>%
-      filter(tissue == target_tissue) %>%
-      mutate(
-        # convert sex from character to factor
-        sex = factor(sex, levels = c("m", "f")),
-        # scale age (month) information following the message from DESeq2
-        month = scale(month, center = TRUE, scale = 12)
-      ) %>%
-      column_to_rownames(var = "sample_name")
-    
-  } else if (est_design == "two_group"){
-    temp1 <- meta_data %>%
-      filter(tissue == target_tissue & month %in% c(age_1, age_2)) %>%
-      # convert sex from character to factor
-      mutate(sex = factor(sex, levels = c("m", "f")),
-             month = factor(month, levels = c(age_1, age_2))) %>%
-      column_to_rownames(var = "sample_name")
+  dat_ids <- readRDS("data/Transcriptome/gene_symbol_entrezid_table_2026-09-12_exported.rds")
+  
+  if (group_design == "linear"){
+    de_filename <- paste0("data/Transcriptome/DE_res_", group_design,
+                          "/DESeq_", tissue, "_linear_2026-09-12_exported.rds")
+  } else if (group_design == "two_group"){
+    de_filename <- paste0("data/Transcriptome/DE_res_", group_design,
+                          "/", tissue,
+                          "/DESeq_", tissue, "_m", age_young, "_vs_m", age_old, "_2026-09-12_exported.rds")
   }
   
-  # raw count data
-  temp2 <- readRDS(paste0(rawcount_dir, "/bulkTMS_rawCounts_", target_tissue, "_exported_2025_12_17.rds"))
-  temp2 <- temp2[, rownames(temp1)]
+  de_res <- readRDS(de_filename) %>%
+    mutate(ENTREZID = as.character(ENTREZID)) %>%
+    left_join(dat_ids, by = "ENTREZID") %>%
+    dplyr::select(SYMBOL, everything())
   
-  # Create DESeqDataSet object
-  temp3 <- DESeq2::DESeqDataSetFromMatrix(countData = temp2,
-                                          colData = temp1,
-                                          design = ~ sex + month)
-  
-  # Perform Differential Expression analysis
-  temp3 <- DESeq2::DESeq(temp3)
-  
-  # export estimation result of age effect (month), but no sex
-  res_out <- DESeq2::results(temp3, name = str_subset(DESeq2::resultsNames(temp3), "month")) %>%
-    data.frame() %>%
-    rownames_to_column("symbol") %>%
-    dplyr::select(symbol, log2FoldChange, pvalue, padj)
-  
-  rm(temp1, temp2, temp3)
-  gc();gc()
-  return(res_out)
+  return(de_res)
 }
 
 
 # clusterProfiler Over Represenatation Analysis ----
-
 my_cluterprofiler_ora <- function(differential_exps,
                                   background_exps,
-                                  bioterm_database){
+                                  bioterm_database,
+                                  tissue_plot_title = NULL){
   requireNamespace("clusterProfiler")
   requireNamespace("enrichplot")
   requireNamespace("org.Mm.eg.db")
@@ -145,7 +121,7 @@ my_cluterprofiler_ora <- function(differential_exps,
                                              pvalueCutoff = 0.05,
                                              pAdjustMethod = "BH")
       if (!is.null(res_ora)){
-        res_ora <- DOSE::setReadable(res_ora, OrgDb = org.Mm.eg.db::org.Mm.eg.db, keyType = "ENTREZID")
+        res_ora <- setReadable(res_ora, OrgDb = org.Mm.eg.db::org.Mm.eg.db, keyType = "ENTREZID")
       }
     } else {
       res_ora <- clusterProfiler::enrichGO(gene = unique(differential_exps),
@@ -156,6 +132,7 @@ my_cluterprofiler_ora <- function(differential_exps,
                                            pvalueCutoff  = 0.05,
                                            readable = TRUE)
     }
+    
     
     # Plot
     if (is.null(res_ora) || (nrow(res_ora@result) > 0 && sum(res_ora@result$p.adjust < 0.05) == 0)) {
@@ -184,10 +161,11 @@ my_cluterprofiler_ora <- function(differential_exps,
           coord_flip() +
           scale_size_continuous(name = "DEs Count",
                                 labels = scales::number_format(accuracy = 1),
-                                limits = c(1, NA)) +
+                                limits = c(1, NA),
+                                range = c(3, 8)) +
           xlab(NULL) +
           ylab("-log10(p.adjust)") +
-          labs(title = paste0("Enrichment Analysis of ", bioterm_database)) +
+          labs(title = paste0(bioterm_database, " ORA of ", tissue_plot_title)) +
           theme_light() +
           theme(text = element_text(family = "sans", size = 16),
                 axis.text.y = element_text(color = "black", size = 11),
@@ -195,7 +173,8 @@ my_cluterprofiler_ora <- function(differential_exps,
       } else {
         # make the cluster of enriched terms
         # get distance matrix
-        dist_mat <- stats::as.dist(1 - enrichplot::pairwise_termsim(res_ora, showCategory = nrow(res_ora@result))@termsim)
+        res_ora@result <- res_ora@result %>% drop_na(ID)
+        dist_mat <- stats::as.dist(1 - enrichplot::pairwise_termsim(res_ora, showCategory = sum(res_ora@result$p.adjust < 0.05))@termsim)
         
         # hierarchical clustering
         dot_plot <- stats::cutree(hclust(dist_mat, method = "ward.D2"), k = 5) %>%
@@ -230,10 +209,11 @@ my_cluterprofiler_ora <- function(differential_exps,
           scale_color_brewer(palette = "Set2") +
           scale_size_continuous(name = "DE Count",
                                 labels = scales::number_format(accuracy = 1),
-                                limits = c(1, NA)) +
+                                limits = c(1, NA),
+                                range = c(3, 8)) +
           xlab(NULL) +
           ylab("-log10(p.adjust)") +
-          labs(title = paste0(bioterm_database, " Enrichment Analysis")) +
+          labs(title = paste0(bioterm_database, " ORA of ", tissue_plot_title)) +
           theme_light() +
           theme(text = element_text(family = "sans", size = 16),
                 axis.text = element_text(color = "black"),
@@ -251,9 +231,76 @@ my_cluterprofiler_ora <- function(differential_exps,
   return(out_res)
 }
 
+# GSEA Visualization ----
+# As GSEA results are pre-computed, only visualize on-demand
+my_gsea_dp <- function(gsea_res,
+                       bioterm_database,
+                       tissue_plot_title = NULL){
+ 
+  if (sum(gsea_res$p.adjust < 0.05) <= 10){
+    grob <- gsea_res %>%
+      filter(p.adjust < 0.05) %>%
+      mutate(signed_log10_pavl = -sign(NES)*log10(p.adjust)) %>%
+      arrange(desc(signed_log10_pavl)) %>%
+      # wrap biological term because some of them are too long to display
+      mutate(Description = str_wrap(Description, width = 60, indent = 0, exdent = 0)) %>%
+      mutate(Description = factor(Description, levels = rev(.$Description))) %>%
+      ggplot(aes(x = Description, y = signed_log10_pavl, size = abs(NES))) +
+      geom_hline(yintercept = 0, color = "grey20", linetype = "dashed") +
+      geom_point(color = brewer.pal(3, "Set2")[2]) +
+      coord_flip() +
+      scale_size_continuous(name = "|NES|",
+                            range = c(3, 8)) +
+      xlab(NULL) +
+      ylab("signed log10(p.adjust)") +
+      labs(title = paste0(bioterm_database, " GSEA of ", tissue_plot_title)) +
+      theme_light() +
+      theme(text = element_text(family = "sans", size = 16),
+            axis.text.y = element_text(color = "black", size = 11),
+            axis.line = element_line(color = "black"))
+    
+  } else {
+    
+    # if more than 25 pathways were found, show top5 terms from each cluster
+    
+    if (sum(gsea_res$p.adjust < 0.05) > 25){
+      grob <- gsea_res %>%
+        group_by(cluster) %>%
+        arrange(p.adjust, .by_group = TRUE) %>%
+        dplyr::slice_head(n = 5) %>%
+        ungroup() 
+    } else {
+      grob <- gsea_res
+    }
+    
+    grob <- grob %>%
+      filter(p.adjust < 0.05) %>%
+      mutate(signed_log10_pavl = -sign(NES)*log10(p.adjust)) %>%
+      arrange(cluster, desc(signed_log10_pavl)) %>%
+      # wrap biological term because some of them are too long to display
+      mutate(Description = str_wrap(Description, width = 60, indent = 0, exdent = 0)) %>%
+      mutate(Description = factor(Description, levels = rev(.$Description))) %>%
+      ggplot(aes(x = Description, y = signed_log10_pavl, size = abs(NES))) +
+      geom_hline(yintercept = 0, color = "grey20", linetype = "dashed") +
+      geom_point(aes(color = cluster)) +
+      scale_color_brewer(palette = "Set2") +
+      coord_flip() +
+      scale_size_continuous(name = "|NES|",
+                            range = c(3, 8)) +
+      xlab(NULL) +
+      ylab("signed log10(p.adjust)") +
+      labs(title = paste0(bioterm_database, " GSEA of ", tissue_plot_title)) +
+      theme_light() +
+      theme(text = element_text(family = "sans", size = 16),
+            axis.text.y = element_text(color = "black", size = 11),
+            axis.line = element_line(color = "black"))
+  }
+  
+  return(grob)
+}
 
 # volcano plot ----
-my_volcano <- function(input_data, p_threshold, fc_threshold, tooltip_label = "symbol"){
+my_volcano <- function(input_data, p_threshold, fc_threshold, tooltip_label = "SYMBOL"){
   grob <- input_data %>%
     # remove missing value
     drop_na(log2FoldChange, padj) %>%
@@ -348,7 +395,8 @@ my_microbiomeprofiler_ora <- function(differential_metabs,
                                       specify_background = TRUE,
                                       background_metabs = NULL,
                                       bioterm_database = c("KEGG", "SMPDB"),
-                                      cid_table){
+                                      cid_table,
+                                      tissue_plot_title = NULL){
   requireNamespace("clusterProfiler")
   requireNamespace("MicrobiomeProfiler")
   
@@ -369,19 +417,22 @@ my_microbiomeprofiler_ora <- function(differential_metabs,
   } else if (length(differential_metabs) > 0){
     if (bioterm_database == "KEGG" & specify_background){
       # KEGG Enrichment & Specify background metabolites
-      res_metab_ora <- clusterProfiler::enrichKEGG(gene = unique(differential_metabs),
-                                                   universe = unique(background_metabs),
-                                                   organism = "cpd",
-                                                   pvalueCutoff = 1,
-                                                   pAdjustMethod = "BH",
-                                                   minGSSize = 5)
+      res_metab_ora <- clusterProfiler::enricher(gene = unique(differential_metabs),
+                                                 universe = unique(background_metabs),
+                                                 TERM2GENE = dat_pathway2compound,
+                                                 TERM2NAME = dat_pathway2name,
+                                                 pvalueCutoff = 1,
+                                                 pAdjustMethod = "BH",
+                                                 minGSSize = 5)
     } else if (bioterm_database == "KEGG" & !specify_background) {
       # KEGG Enrichment & NOT Specify background metabolites
-      res_metab_ora <- clusterProfiler::enrichKEGG(gene = unique(differential_metabs),
-                                                   organism = "cpd",
-                                                   pvalueCutoff = 0.05,
-                                                   pAdjustMethod = "BH",
-                                                   minGSSize = 5)
+      res_metab_ora <- clusterProfiler::enricher(gene = unique(differential_metabs),
+                                                 universe = unique(dat_pathway2compound$gene),
+                                                 TERM2GENE = dat_pathway2compound,
+                                                 TERM2NAME = dat_pathway2name,
+                                                 pvalueCutoff = 1,
+                                                 pAdjustMethod = "BH",
+                                                 minGSSize = 5)
     } else if (bioterm_database == "SMPDB" & specify_background){
       # SMPDB Enrichment & Specify background metabolites
       res_metab_ora <- MicrobiomeProfiler::enrichHMDB(metabo_list = unique(differential_metabs),
@@ -404,7 +455,9 @@ my_microbiomeprofiler_ora <- function(differential_metabs,
     }
     
     # Plot
-    if (is.null(res_metab_ora)) {
+    if (is.null(res_metab_ora) ||
+        nrow(res_metab_ora@result) == 0 ||
+        !any(res_metab_ora@result$Count > 0, na.rm = TRUE))  {
       # in case no enriched term was found 
       metab_dot_plot <- ggplot() +
         annotate("text", x = 0.5, y = 0.5,
@@ -415,17 +468,18 @@ my_microbiomeprofiler_ora <- function(differential_metabs,
         theme(text = element_text(family = "sans"))
       df_metab_ea_show <- data.frame()
     } else {
-      df_metab_ea_show <- res_metab_ora@result
+      df_metab_ea_show <- res_metab_ora@result %>% filter(Count > 0)
       
       # if more than 25 pathways are discovered, show top 25 pathways
-      if (nrow(res_metab_ora@result) > 25){
-        metab_dot_plot <- res_metab_ora@result %>%
+      if (nrow(df_metab_ea_show) > 25){
+        metab_dot_plot <- df_metab_ea_show %>%
+          arrange(p.adjust) %>%
           dplyr::slice_head(n = 25)
         
-        g_title <- paste0("Top 25 ", bioterm_database, " Pathways")
+        g_title <- paste0("Top 25 ", bioterm_database, " Pathways in ", tissue_plot_title)
       } else {
-        metab_dot_plot <- res_metab_ora@result
-        g_title <- paste0(bioterm_database, " Pathways")
+        metab_dot_plot <- df_metab_ea_show
+        g_title <- paste0(bioterm_database, " Pathways in", tissue_plot_title)
       }
       
       metab_dot_plot <- metab_dot_plot %>%
@@ -438,7 +492,8 @@ my_microbiomeprofiler_ora <- function(differential_metabs,
         coord_flip() +
         scale_size_continuous(name = "Metabolites Count",
                               labels = scales::number_format(accuracy = 1),
-                              limits = c(1, NA)) +
+                              limits = c(1, NA),
+                              range = c(3, 8)) +
         xlab(NULL) +
         ylab("-p.adjust") +
         labs(title = g_title) +
@@ -482,7 +537,7 @@ my_microbiomeprofiler_ora <- function(differential_metabs,
 my_pathview <- function(gene_fc = NULL, cpd_fc = NULL, kegg_id, gene_limit = 1){
   requireNamespace("pathview")
   requireNamespace("org.Mm.eg.db")
-  data(bods, package = "pathview")
+  # data(bods, package = "pathview")
   
   # initialize the object to put results
   out_res <- list()
