@@ -1,1 +1,0 @@
-Application-ready data objects are provided in Zenodo repository. Please see README.md.
